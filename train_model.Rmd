@@ -1,0 +1,163 @@
+Carga datos y librerias
+```{r}
+# Carga de todas las librerías necesarias
+library(readr)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(tm)
+library(caret)
+library(e1071)
+library(tidytext)
+library(tidyr)
+
+# --- Carga de Datos ---
+# Ruta a la carpeta que contiene los archivos CSV
+ruta_carpeta <- "C:/Users/usuario/Desktop/Juan/base_prueba/pediatria"
+
+# Listar y leer todos los archivos CSV en un único dataframe
+archivos_csv <- list.files(path = ruta_carpeta, pattern = "\\.csv$", full.names = TRUE)
+
+data <- archivos_csv %>%
+  map_dfr(~ read_csv2(.x, 
+                      locale = locale(encoding = "windows-1252"), 
+                      col_types = cols(.default = "c")))
+
+# --- Limpieza y Selección de Columnas ---
+# Imputar NA en 'Diag. Definitivo' con los valores de 'Diag. Presuntivo'
+# Esto enriquece la columna principal de diagnóstico antes de descartar la secundaria.
+if ("Diag. Presuntivo" %in% names(data)) {
+  data <- data %>%
+    mutate(`Diag. Definitivo` = coalesce(`Diag. Definitivo`, `Diag. Presuntivo`))
+}
+
+# Seleccionar solo las columnas pertinentes para el modelo
+data <- data %>%
+  select(`Diag. Definitivo`, `Código CIE10`) %>%
+  # Asegurarse de que el texto de diagnóstico esté en minúsculas desde el inicio
+  mutate(`Diag. Definitivo` = str_to_lower(`Diag. Definitivo`))
+
+# Eliminar filas donde el diagnóstico o el código CIE10 son NA, ya que no son útiles
+data <- data %>%
+  filter(!is.na(`Diag. Definitivo`), !is.na(`Código CIE10`))
+
+# Vistazo a los datos limpios
+# head(data)
+```
+
+Proceso, modelo y test
+```{r}
+# ==========================================================
+# PANEL DE CONTROL DE PARÁMETROS
+# ==========================================================
+param_upsampling_n <- 500
+param_train_split  <- 0.75
+param_svm_kernel   <- "linear"
+param_svm_cost     <- 3
+# ==========================================================
+
+
+# --- Creación de la Variable Objetivo y Filtrado ---
+data$clasificacion <- substr(data$`Código CIE10`, 1, 3)
+data <- data %>% filter(clasificacion != "(Si")
+
+freq <- table(data$clasificacion)
+codigos_frecuentes <- names(freq[freq > 500])
+
+
+df_filtrado <- data[data$clasificacion %in% codigos_frecuentes,
+                    c("Diag. Definitivo", "clasificacion")]
+
+# --- Balanceo del Dataset y División ---
+set.seed(123)
+df_bal <- df_filtrado %>%
+  group_by(clasificacion) %>%
+  slice_sample(n = param_upsampling_n, replace = TRUE) %>%
+  ungroup()
+
+train_index <- createDataPartition(df_bal$clasificacion, p = param_train_split, list = FALSE)
+
+
+train <- df_bal[train_index, ] %>% mutate(doc_id = row_number())
+test  <- df_bal[-train_index, ] %>% mutate(doc_id = row_number())
+
+
+# ---PROCESO PLN CON TIDYTEXT  ---
+stopwords_es <- tibble(word = stopwords("spanish"))
+
+limpiar_texto <- function(texto) {
+  texto <- tolower(texto)
+  texto <- removePunctuation(texto)
+  texto <- removeNumbers(texto)
+  texto <- stripWhitespace(texto)
+  return(texto)
+}
+
+train$Diag_Limpio <- sapply(train$`Diag. Definitivo`, limpiar_texto)
+test$Diag_Limpio <- sapply(test$`Diag. Definitivo`, limpiar_texto)
+
+train_unigrams <- train %>%
+  unnest_tokens(word, Diag_Limpio) %>%
+  filter(!word %in% stopwords_es$word)
+
+test_unigrams <- test %>%
+  unnest_tokens(word, Diag_Limpio) %>%
+  filter(!word %in% stopwords_es$word)
+
+train_bigrams <- train %>%
+  unnest_tokens(bigram, Diag_Limpio, token = "ngrams", n = 2) %>%
+  filter(!is.na(bigram)) %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>%
+  filter(!word1 %in% stopwords_es$word, !word2 %in% stopwords_es$word) %>%
+  unite(bigram, word1, word2, sep = " ")
+
+test_bigrams <- test %>%
+  unnest_tokens(bigram, Diag_Limpio, token = "ngrams", n = 2) %>%
+  filter(!is.na(bigram)) %>%
+  separate(bigram, c("word1", "word2"), sep = " ") %>%
+  filter(!word1 %in% stopwords_es$word, !word2 %in% stopwords_es$word) %>%
+  unite(bigram, word1, word2, sep = " ")
+
+
+train_limpio <- bind_rows(
+  train_unigrams %>% rename(token = word),
+  train_bigrams %>% rename(token = bigram)
+) %>%
+  group_by(doc_id, clasificacion) %>%
+  summarise(Diag_Final = paste(token, collapse = " "), .groups = "drop")
+
+test_limpio <- bind_rows(
+  test_unigrams %>% rename(token = word),
+  test_bigrams %>% rename(token = bigram)
+) %>%
+  group_by(doc_id, clasificacion) %>%
+  summarise(Diag_Final = paste(token, collapse = " "), .groups = "drop")
+# --- FIN PROCESO PLN ---
+
+
+# --- Creación de la Matriz de Términos por Documento (DTM) ---
+corpus_train <- VCorpus(VectorSource(train_limpio$Diag_Final)) 
+corpus_test  <- VCorpus(VectorSource(test_limpio$Diag_Final)) 
+
+dtm_train <- DocumentTermMatrix(corpus_train, control = list(removeSparseTerms = 0.995))
+dtm_test  <- DocumentTermMatrix(corpus_test, control = list(dictionary = Terms(dtm_train)))
+train_matrix <- as.data.frame(as.matrix(dtm_train))
+train_matrix$clasificacion <- as.factor(train_limpio$clasificacion)
+test_matrix <- as.data.frame(as.matrix(dtm_test))
+test_matrix$clasificacion <- as.factor(test_limpio$clasificacion)
+
+# --- Entrenamiento y Evaluación del Modelo SVM ---
+set.seed(123)
+svm_model <- svm(
+  clasificacion ~ ., 
+  data = train_matrix, 
+  kernel = param_svm_kernel,
+  cost = param_svm_cost,
+  scale = FALSE
+)
+
+pred_svm <- predict(svm_model, newdata = test_matrix)
+conf_matrix <- confusionMatrix(pred_svm, test_matrix$clasificacion)
+print(conf_matrix)
+```
+
