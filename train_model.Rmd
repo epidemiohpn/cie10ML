@@ -1,4 +1,5 @@
 Carga datos y librerias
+
 ```{r}
 # Carga de todas las librerías necesarias
 library(readr)
@@ -46,6 +47,7 @@ data <- data %>%
 ```
 
 Proceso, modelo y test
+
 ```{r}
 # ==========================================================
 # PANEL DE CONTROL DE PARÁMETROS
@@ -159,5 +161,22 @@ svm_model <- svm(
 pred_svm <- predict(svm_model, newdata = test_matrix)
 conf_matrix <- confusionMatrix(pred_svm, test_matrix$clasificacion)
 print(conf_matrix)
+```
+
+Guardar modelo
+
+```{r}
+# --- GUARDAR EL MODELO ENTRENADO Y EL DICCIONARIO ---
+# Una vez que estés satisfecho con tu conf_matrix, ejecuta estas líneas.
+
+# 1. Guardar el objeto del modelo SVM (el "cerebro")
+saveRDS(svm_model, file = "modelo_svm_cie10.rds")
+
+# 2. Guardar el diccionario de términos de la matriz de entrenamiento (el "vocabulario")
+#    Esto es CRUCIAL para poder procesar nuevos textos de la misma manera.
+terminos_entrenamiento <- Terms(dtm_train)
+saveRDS(terminos_entrenamiento, file = "diccionario_terminos_entrenamiento.rds")
+
+print("¡Modelo y diccionario guardados exitosamente!")
 ```
 
