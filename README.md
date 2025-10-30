@@ -1,1 +1,1 @@
-# cie10ML
+# Codigo para procesar datos, limpiarlos y entrenar modelo 
