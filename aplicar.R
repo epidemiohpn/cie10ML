@@ -1,6 +1,3 @@
-# ==================================================================
-# SCRIPT PARA APLICAR MODELO CIE10 A NUEVOS DATOS SEMANALES
-# ==================================================================
 # Librerias
 library(readr)
 library(dplyr)
@@ -114,19 +111,18 @@ write.csv2(df_semanal_con_predicciones, file = ruta_salida_csv, row.names = FALS
 print(paste("Resultados guardados en:", ruta_salida_csv))
 
 
-# --- ANÁLISIS DE LA CLASE Z51 ---
-# Carga tus datos originales si no los tienes en memoria
-# (Este es el dataframe 'data' del inicio de tu chunk 1)
+# debug z51
 
-# 1. Crear la columna de clasificación para poder filtrar
+
+
 data_analisis <- data %>%
   mutate(clasificacion = substr(`Código CIE10`, 1, 3))
 
-# 2. Filtrar y ver los diagnósticos etiquetados como Z51
+
 diagnosticos_z51 <- data_analisis %>%
   filter(clasificacion == "Z51") %>%
   select(`Diag. Definitivo`)
 
-# 3. Muestra los 50 diagnósticos Z51 más frecuentes
+
 print("Diagnósticos más comunes para el código Z51:")
 View(as.data.frame(head(sort(table(diagnosticos_z51$`Diag. Definitivo`), decreasing = TRUE), 50)))
