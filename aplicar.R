@@ -108,7 +108,7 @@ procesar_y_predecir_csv <- function(ruta_csv) {
 
 # 1. DEFINE LA RUTA A TU NUEVO ARCHIVO CSV
 #    Cambia esta ruta cada lunes por la del nuevo archivo que descargaste.
-ruta_nuevo_csv <- "C:/Ruta/A/Tu/Carpeta/semana_actual.csv" # <-- ¡CAMBIA ESTO!
+ruta_nuevo_csv <- "C:/Users/usuario/Desktop/test/guardia_adultos_2025_s43.csv" # <-- ¡CAMBIA ESTO!
 
 # 2. EJECUTA LA FUNCIÓN
 #    Esta es la única línea que necesitas correr para hacer todo el trabajo.
@@ -125,3 +125,21 @@ ruta_salida_csv <- str_replace(ruta_nuevo_csv, "\\.csv$", "_con_predicciones.csv
 write.csv2(df_semanal_con_predicciones, file = ruta_salida_csv, row.names = FALSE)
 
 print(paste("Resultados guardados en:", ruta_salida_csv))
+
+
+# --- ANÁLISIS DE LA CLASE Z51 ---
+# Carga tus datos originales si no los tienes en memoria
+# (Este es el dataframe 'data' del inicio de tu chunk 1)
+
+# 1. Crear la columna de clasificación para poder filtrar
+data_analisis <- data %>%
+  mutate(clasificacion = substr(`Código CIE10`, 1, 3))
+
+# 2. Filtrar y ver los diagnósticos etiquetados como Z51
+diagnosticos_z51 <- data_analisis %>%
+  filter(clasificacion == "Z51") %>%
+  select(`Diag. Definitivo`)
+
+# 3. Muestra los 50 diagnósticos Z51 más frecuentes
+print("Diagnósticos más comunes para el código Z51:")
+View(as.data.frame(head(sort(table(diagnosticos_z51$`Diag. Definitivo`), decreasing = TRUE), 50)))

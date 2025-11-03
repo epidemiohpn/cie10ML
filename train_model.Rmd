@@ -14,7 +14,7 @@ library(tidyr)
 
 # --- Carga de Datos ---
 # Ruta a la carpeta que contiene los archivos CSV
-ruta_carpeta <- "C:/Users/usuario/Desktop/Juan/base_prueba/pediatria"
+ruta_carpeta <- "C:/Users/usuario/Desktop/Juan/base_prueba/adultos"
 
 # Listar y leer todos los archivos CSV en un único dataframe
 archivos_csv <- list.files(path = ruta_carpeta, pattern = "\\.csv$", full.names = TRUE)
